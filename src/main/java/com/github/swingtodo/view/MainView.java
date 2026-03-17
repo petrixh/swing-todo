@@ -5,6 +5,7 @@ import com.github.swingtodo.panel.FormPanel;
 import com.github.swingtodo.panel.TablePanel;
 import com.github.swingtodo.service.TodoService;
 
+
 import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.TableModelEvent;
@@ -14,10 +15,9 @@ import java.util.List;
 
 public class MainView extends JFrame {
 
-    private final TodoService service;
     private final FormPanel formPanel;
     private final TablePanel tablePanel;
-    private boolean refreshing;
+    
 
     public MainView() {
         super("Swing ToDo");
@@ -26,7 +26,6 @@ public class MainView extends JFrame {
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
-        service = new TodoService();
         formPanel = new FormPanel();
         tablePanel = new TablePanel();
 
@@ -46,19 +45,19 @@ public class MainView extends JFrame {
 
             String editingId = formPanel.getEditingTodoId();
             if (editingId == null) {
-                service.add(new Todo(name, date));
+                tablePanel.getService().add(new Todo(name, date));
             } else {
                 Todo proxy = new Todo(name, date);
                 // Todo constructor generates a new ID; we need the original
                 // Use reflection-free approach: update via service which matches by ID
                 // Build a temporary holder that carries the editing ID
-                service.getAllTodos().stream()
+                tablePanel.getService().getAllTodos().stream()
                         .filter(t -> t.getId().equals(editingId))
                         .findFirst()
                         .ifPresent(t -> {
                             t.setName(name);
                             t.setDueDate(date);
-                            service.update(t);
+                            tablePanel.getService().update(t);
                         });
             }
             formPanel.clear();
@@ -68,7 +67,7 @@ public class MainView extends JFrame {
         // 2. Table row selection → populate form
         tablePanel.getTable().getSelectionModel().addListSelectionListener(
                 (ListSelectionEvent e) -> {
-                    if (e.getValueIsAdjusting() || refreshing) return;
+                    if (e.getValueIsAdjusting() || tablePanel.isRefreshing()) return;
                     Todo selected = tablePanel.getSelectedTodo();
                     formPanel.setTodo(selected);
                 });
@@ -76,29 +75,24 @@ public class MainView extends JFrame {
         // 3. Table model change on col 0 → toggle complete
         tablePanel.getTable().getModel().addTableModelListener(
                 (TableModelEvent e) -> {
-                    if (refreshing) return;
+                    if (tablePanel.isRefreshing()) return;
                     if (e.getType() == TableModelEvent.UPDATE && e.getColumn() == 0) {
                         Todo todo = tablePanel.getTodoAtRow(e.getFirstRow());
                         if (todo != null) {
-                            service.toggleComplete(todo.getId());
+                            tablePanel.getService().toggleComplete(todo.getId());
                             refreshTable();
                         }
                     }
                 });
 
         // 4. Hide-completed checkbox
-        formPanel.getHideCompletedCheckBox().addActionListener(e -> refreshTable());
+        formPanel.getHideCompletedCheckBox().addActionListener(e -> {
+            tablePanel.setHideCompleted(formPanel.isHideCompletedSelected()); 
+            refreshTable(); 
+        });
     }
 
     private void refreshTable() {
-        refreshing = true;
-        try {
-            List<Todo> todos = formPanel.isHideCompletedSelected()
-                    ? service.getIncompleteTodos()
-                    : service.getAllTodos();
-            tablePanel.setTodos(todos);
-        } finally {
-            refreshing = false;
-        }
+        tablePanel.refreshTable();
     }
 }
